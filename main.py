@@ -21,7 +21,7 @@ LANDMARK_PTS = OrderedDict([
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('Face_Predictor.dat')
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture('test_vids/amani.mp4')
 
 while True:
 
@@ -45,16 +45,17 @@ while True:
         image[shape[23][1],shape[23][0]] = [0,0,255]
         image[shape[20][1], shape[20][0]] = [0, 0, 255]
         image[shape[29][1], shape[29][0]] = [0, 0, 255]
-        ###############
-
-        (x,y) = shape[27]
-        w = abs(shape[20][0]-shape[23][0])
-        h = abs(y-shape[30][1])
+        ##############
+        x = int((shape[21][0]+shape[22][0])/2)
+        y = int((shape[21][1]+shape[22][1])/2)
+        w = abs(shape[39][0]-shape[42][0])
+        h = abs(y-shape[29][1])
         y_mid = int((y + (y - h)) / 2)
         roi = image[y-h:y_mid,int(x-w/2):int(x+w/2)]
-        roi = imutils.resize(roi, width=250, inter=cv2.INTER_CUBIC)
-        cv2.imshow('ROI', roi)
-        cv2.rectangle(image,(int(x-w/2), int(y-h)), (int(x + w/2), y_mid), (0, 0, 255), 1)#not working
+        if(roi.shape[0] !=0 and roi.shape[1] != 0):
+            roi = imutils.resize(roi, width=250, inter=cv2.INTER_CUBIC)
+            cv2.imshow('ROI', roi)
+        cv2.rectangle(image,(int(x-w/2), int(y-h)), (int(x + w/2), y_mid), (0, 0, 255), 1)
         cv2.imshow('Image', image)
     if cv2.waitKey(1) == 13:  # 13 is the Enter Key
         break
