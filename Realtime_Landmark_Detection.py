@@ -6,7 +6,13 @@ import numpy as np
 from imutils import face_utils
 import imutils
 from collections import OrderedDict
-
+import math
+import time
+from sklearn.decomposition import PCA
+from sklearn import preprocessing
+import pandas as pd
+from math import log10 as log
+from signal_processing import Signal_processing
 LANDMARK_PTS = OrderedDict([
     ('mouth', (48, 68)),
     ('right_eyebrow', (17, 22)),
@@ -15,48 +21,104 @@ LANDMARK_PTS = OrderedDict([
     ('left_eye', (42, 48)),
     ('nose', (27, 35)),
     ('jaw', (0, 17)),
-    ])
-
+])
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('Face_Predictor.dat')
+Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);Ysig = np.array([]);Cbsig = np.array([]); Crsig = np.array([]);
 
 cap = cv2.VideoCapture(0)
-
+sp = Signal_processing()
+data_buffer = []
+fft_of_interest = []
+freqs_of_interest = []
+filtered_data = []
+frame_count = 0
+BUFFER_SIZE = 150
+t = time.time()
+fps = 0
+times = []
+bpm = 0
+total =0
 while True:
-   
+    t0 = time.time()
+    frame_count+=1
+    if frame_count%4==0:
+        continue
     (ret, frame) = cap.read()
     image = frame
-    
+
     image = imutils.resize(image, width=500)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-# detect faces in the grayscale image
+    # detect faces in the grayscale image
 
     rects = detector(gray, 1)
-
+    x_old = 0
+    y_old = 0
+    w_old = 0
+    h_old = 0
     # loop over the face detections
-
+    count = 0
     for (i, rect) in enumerate(rects):
         shape = predictor(gray, rect)
         shape = face_utils.shape_to_np(shape)
-        (x, y,s,d) = cv2.boundingRect(np.array([shape[27]]))
-        (a,b) = shape[35]
-#        y = 2*y-b
-        w = 20
-        h = 8
-        roi = image[y-h:y+h,x-w:x+w]
+        #highliting the reference points i want to use
+        image[shape[27][1],shape[27][0]] = [0,0,255]
+        image[shape[23][1],shape[23][0]] = [0,0,255]
+        image[shape[20][1], shape[20][0]] = [0, 0, 255]
+        image[shape[29][1], shape[29][0]] = [0, 0, 255]
+        ##############
+        x_new = int((shape[21][0]+shape[22][0])/2)
+        y_new = int((shape[21][1]+shape[22][1])/2)
+        w_new = abs(shape[39][0]-shape[42][0])
+        h_new = abs(y_new-shape[29][1])
         
-        roi = imutils.resize(roi, width=250, inter=cv2.INTER_CUBIC)
-        cv2.imshow('ROI',roi)
-        cv2.rectangle(image,(x-w,y-h),(x+w,y+h),(0,0,255),1)
-        
-              
+        if count==0:
+            y = y_new
+            x = x_new
+            h = h_new
+            w = w_new
+            count = 1
+        else:
+            y = int((y_new+y_old)/2)
+            x = int((x_old+x_new)/2)
+            w = int((w_old+w_new)/2)
+            h = int((h_new+h_old)/2)
+        x_old = x_new
+        y_old = y_new
+        h_old = h_new
+        w_old = w_new  
+        y_mid = int((y + (y - h)) / 2)
+        roi = image[y-h:y_mid,int(x-w/2):int(x+w/2)]
+        if(roi.shape[0] !=0 and roi.shape[1] != 0):
+            roi = imutils.resize(roi, width=250, inter=cv2.INTER_CUBIC)
+            green = sp.extract_color(roi)
+            data_buffer.append(green)
+            times.append(time.time() - t)
+        L = len(data_buffer)
+        if L > BUFFER_SIZE:
+            data_buffer = data_buffer[-BUFFER_SIZE:]
+            times = times[-BUFFER_SIZE:]
+            L = BUFFER_SIZE
+        if L==100:
+            fps = float(L) / (times[-1] - times[0])
+            detrended_data = sp.signal_detrending(data_buffer)
+            interpolated_data = sp.interpolation(detrended_data, times)
+            normalized_data = sp.normalization(interpolated_data)
+            fft_of_interest, freqs_of_interest = sp.fft(normalized_data, fps)
+            max_arg = np.argmax(fft_of_interest)
+            bpm = freqs_of_interest[max_arg]
+            filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.3, 3, fps, order = 3)
+        if bpm!=0:
+            total+=bpm
+        with open("a.txt",mode = "a+") as f:
+            f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
             
+        cv2.rectangle(image,(int(x-w/2), int(y-h)), (int(x + w/2), y_mid), (0, 0, 255), 1)
         cv2.imshow('Image', image)
-                
-
     if cv2.waitKey(1) == 13:  # 13 is the Enter Key
         break
+print(total)
 cap.release()
 cv2.destroyAllWindows()
