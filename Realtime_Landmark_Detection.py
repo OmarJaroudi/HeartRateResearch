@@ -6,9 +6,10 @@ import numpy as np
 from imutils import face_utils
 import imutils
 from collections import OrderedDict
-
+from matplotlib import pyplot as plt
 import time
 from signal_processing import Signal_processing
+from statistics import mean
 LANDMARK_PTS = OrderedDict([
     ('mouth', (48, 68)),
     ('right_eyebrow', (17, 22)),
@@ -31,6 +32,9 @@ freqs_of_interest = []
 filtered_data = []
 frame_count = 0
 BUFFER_SIZE = 100
+Heart_rate = []
+Avg = 0
+L = 0
 t = time.time()
 fps = 0
 times = []
@@ -90,6 +94,9 @@ while True:
         if(roi.shape[0] !=0 and roi.shape[1] != 0):
             roi = imutils.resize(roi, width=250, inter=cv2.INTER_CUBIC)
             green = sp.extract_color(roi)
+            if(abs(green-np.mean(data_buffer))>30 and L>99): #remove sudden change, if the avg value change is over 10, use the mean of the data_buffer
+                green = data_buffer[-1]
+        
             data_buffer.append(green)
             times.append(time.time() - t)
         L = len(data_buffer)
@@ -102,18 +109,24 @@ while True:
             detrended_data = sp.signal_detrending(data_buffer)
             interpolated_data = sp.interpolation(detrended_data, times)
             normalized_data = sp.normalization(interpolated_data)
-            fft_of_interest, freqs_of_interest = sp.fft(normalized_data, fps)
+            filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.8, 3, fps, order = 3)
+            fft_of_interest, freqs_of_interest = sp.fft(filtered_data, fps)
             max_arg = np.argmax(fft_of_interest)
             bpm = freqs_of_interest[max_arg]
-            filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.3, 3, fps, order = 3)
+          
             with open("a.txt",mode = "a+") as f:
                 f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
-       
+            Heart_rate.append(bpm)
             
-        cv2.rectangle(image,(int(x-w/2), int(y-h)), (int(x + w/2), y_mid), (0, 0, 255), 1)
+        cv2.rectangle(image,(int(x-w/2), int(y-h)), (
+                int(x + w/2), y_mid), (0, 0, 255), 1)
         cv2.imshow('Image', image)
     if cv2.waitKey(1) == 13:  # 13 is the Enter Key
         break
-print(total)
+
+plt.plot(Heart_rate)
+plt.show()
+Avg = mean(Heart_rate)
+print(Avg)
 cap.release()
 cv2.destroyAllWindows()
