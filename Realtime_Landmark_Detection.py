@@ -6,12 +6,8 @@ import numpy as np
 from imutils import face_utils
 import imutils
 from collections import OrderedDict
-import math
+
 import time
-from sklearn.decomposition import PCA
-from sklearn import preprocessing
-import pandas as pd
-from math import log10 as log
 from signal_processing import Signal_processing
 LANDMARK_PTS = OrderedDict([
     ('mouth', (48, 68)),
@@ -34,7 +30,7 @@ fft_of_interest = []
 freqs_of_interest = []
 filtered_data = []
 frame_count = 0
-BUFFER_SIZE = 150
+BUFFER_SIZE = 100
 t = time.time()
 fps = 0
 times = []
@@ -43,7 +39,7 @@ total =0
 while True:
     t0 = time.time()
     frame_count+=1
-    if frame_count%4==0:
+    if frame_count%3==0:
         continue
     (ret, frame) = cap.read()
     image = frame
@@ -110,10 +106,9 @@ while True:
             max_arg = np.argmax(fft_of_interest)
             bpm = freqs_of_interest[max_arg]
             filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.3, 3, fps, order = 3)
-        if bpm!=0:
-            total+=bpm
-        with open("a.txt",mode = "a+") as f:
-            f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
+            with open("a.txt",mode = "a+") as f:
+                f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
+       
             
         cv2.rectangle(image,(int(x-w/2), int(y-h)), (int(x + w/2), y_mid), (0, 0, 255), 1)
         cv2.imshow('Image', image)
