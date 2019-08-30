@@ -54,10 +54,7 @@ while True:
     # detect faces in the grayscale image
 
     rects = detector(gray, 1)
-    x_old = 0
-    y_old = 0
-    w_old = 0
-    h_old = 0
+    
     # loop over the face detections
     count = 0
     for (i, rect) in enumerate(rects):
@@ -69,26 +66,10 @@ while True:
         image[shape[20][1], shape[20][0]] = [0, 0, 255]
         image[shape[29][1], shape[29][0]] = [0, 0, 255]
         ##############
-        x_new = int((shape[21][0]+shape[22][0])/2)
-        y_new = int((shape[21][1]+shape[22][1])/2)
-        w_new = abs(shape[39][0]-shape[42][0])
-        h_new = abs(y_new-shape[29][1])
-        
-        if count==0:
-            y = y_new
-            x = x_new
-            h = h_new
-            w = w_new
-            count = 1
-        else:
-            y = int((y_new+y_old)/2)
-            x = int((x_old+x_new)/2)
-            w = int((w_old+w_new)/2)
-            h = int((h_new+h_old)/2)
-        x_old = x_new
-        y_old = y_new
-        h_old = h_new
-        w_old = w_new  
+        x = int((shape[21][0]+shape[22][0])/2)
+        y = int((shape[21][1]+shape[22][1])/2)
+        w = abs(shape[39][0]-shape[42][0])
+        h = abs(y-shape[29][1])
         y_mid = int((y + (y - h)) / 2)
         roi = image[y-h:y_mid,int(x-w/2):int(x+w/2)]
         if(roi.shape[0] !=0 and roi.shape[1] != 0):
@@ -111,8 +92,8 @@ while True:
             normalized_data = sp.normalization(interpolated_data)
             nyq = 0.5*fps
             l = 0.8/nyq
-            h = 3/nyq
-            if(l>0 and l<1 and h>0 and h<1 and h>l):
+            high = 3/nyq
+            if(l>0 and l<1 and high>0 and high<1 and high>l):
                 filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.8, 3, fps, order = 3)
             fft_of_interest, freqs_of_interest = sp.fft(filtered_data, fps)
             max_arg = np.argmax(fft_of_interest)
