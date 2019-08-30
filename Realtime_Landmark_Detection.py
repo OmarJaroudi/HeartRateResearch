@@ -6,7 +6,7 @@ import numpy as np
 from imutils import face_utils
 import imutils
 from collections import OrderedDict
-from matplotlib import pyplot as plt
+#from matplotlib import pyplot as plt
 import time
 from signal_processing import Signal_processing
 from statistics import mean
@@ -109,13 +109,17 @@ while True:
             detrended_data = sp.signal_detrending(data_buffer)
             interpolated_data = sp.interpolation(detrended_data, times)
             normalized_data = sp.normalization(interpolated_data)
-            filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.8, 3, fps, order = 3)
+            nyq = 0.5*fps
+            l = 0.8/nyq
+            h = 3/nyq
+            if(l>0 and l<1 and h>0 and h<1 and h>l):
+                filtered_data = sp.butter_bandpass_filter(interpolated_data, 0.8, 3, fps, order = 3)
             fft_of_interest, freqs_of_interest = sp.fft(filtered_data, fps)
             max_arg = np.argmax(fft_of_interest)
             bpm = freqs_of_interest[max_arg]
           
-            with open("a.txt",mode = "a+") as f:
-                f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
+#            with open("a.txt",mode = "a+") as f:
+#                f.write("time: {0:.4f} ".format(times[-1]) + ", HR: {0:.2f} ".format(bpm) + "\n")       
             Heart_rate.append(bpm)
             
         cv2.rectangle(image,(int(x-w/2), int(y-h)), (
@@ -124,8 +128,6 @@ while True:
     if cv2.waitKey(1) == 13:  # 13 is the Enter Key
         break
 
-plt.plot(Heart_rate)
-plt.show()
 Avg = mean(Heart_rate)
 print(Avg)
 cap.release()
