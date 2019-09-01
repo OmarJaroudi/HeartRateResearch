@@ -238,7 +238,7 @@ Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);Avg_signal = np.array
    # Start time
 
 frame_count = 0
-t = time.time()
+
 
 while True:
     success,image = cap.read()
@@ -275,23 +275,22 @@ while True:
             t = time.time()
             print(1)
         if(frame_count>=50):
+            elapsed.append (time.time()-t)
             Bsig = np.append(Bsig,np.mean(B[np.nonzero(B)]))
             Gsig = np.append(Gsig,np.mean(G[np.nonzero(G)]))
             Rsig = np.append(Rsig,np.mean(R[np.nonzero(R)]))
             Avg_signal = np.append(Avg_signal,(np.mean(B[np.nonzero(B)])+np.mean(G[np.nonzero(G)])+np.mean(R[np.nonzero(R)]))/3)
             print(time.time()-t)
-            elapsed.append (time.time()-t)
+            
         cv2.imshow('Image', image)
     if cv2.waitKey(1) == 13 or frame_count==600:  # 13 is the Enter Key
         break
    
     frame_count+=1
-    
-    
-end = time.time()
 
 
 
+fps = (frame_count-50)/elapsed[-1]
 
 Bsig = sp.signal_detrending(Bsig)
 Gsig = sp.signal_detrending(Gsig)
@@ -301,12 +300,9 @@ Bsig = normalize(Bsig)
 Gsig = normalize(Gsig)
 Rsig = normalize(Rsig)
 
-Avg_signal = normalize(Avg_signal)
 
 bandpass_filter = signal.firwin(128,0.8,3,window = 'hamming')
-Bsig = np.convolve(Bsig,bandpass_filter)
-Gsig = np.convolve(Gsig,bandpass_filter)
-Rsig = np.convolve(Rsig,bandpass_filter)
+
 
 
 dataset = pd.DataFrame({'Gsig':Gsig,'Rsig':Rsig,'Bsig':Bsig})
@@ -320,9 +316,12 @@ pca_res = pca.fit_transform(data)
 
 principalDf = pd.DataFrame(data = pca_res,columns = ['principal component 1'])
 PC1 = principalDf.loc[:,'principal component 1'].values
+PC1 = PC1 - np.mean(PC1)
+PC1 = np.convolve(PC1,bandpass_filter)
 
-
-plt.show()
-
+fft_of_interest, freqs_of_interest = sp.fft(PC1, fps)
+max_arg = np.argmax(fft_of_interest)
+bpm = freqs_of_interest[max_arg]
+print("bpm = " +str(bpm))
 cap.release()
 cv2.destroyAllWindows()
