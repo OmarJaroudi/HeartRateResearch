@@ -3,20 +3,23 @@
 import cv2
 import dlib
 import numpy as np
-from imutils import face_utils
+
 from collections import OrderedDict
 from math import sqrt
 from math import acos
 from math import pi
+import warnings
+warnings.filterwarnings("ignore")
 import time
 from sklearn.decomposition import PCA
 from signal_processing import Signal_processing
 sp = Signal_processing()
-from scipy import signal
+from sklearn.preprocessing import StandardScaler
 from statistics import stdev
 import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
+from matplotlib import pyplot as plt
+from scipy.ndimage.filters import gaussian_filter1d
+
 LANDMARK_PTS = OrderedDict([
     ('mouth', (48, 68)),
     ('right_eyebrow', (17, 22)),
@@ -60,19 +63,11 @@ detector = dlib.get_frontal_face_detector()
 
 
 def unit_vector(vector):
-    """ Returns the unit vector of the vector.  """
+   
     return vector / np.linalg.norm(vector)
 
 def angle_between(v1, v2):
-    """ Returns the angle in radians between vectors 'v1' and 'v2'::
 
-            >>> angle_between((1, 0, 0), (0, 1, 0))
-            1.5707963267948966
-            >>> angle_between((1, 0, 0), (1, 0, 0))
-            0.0
-            >>> angle_between((1, 0, 0), (-1, 0, 0))
-            3.141592653589793
-    """
     v1_u = unit_vector(v1)
     v2_u = unit_vector(v2)
     return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
@@ -189,16 +184,7 @@ def forehead(landmarks):
     p2 = p1 + [+distanceEyes*np.cos(theta),-distanceEyes*np.sin(theta)];
     p3 = oppositePoint
     p4 = p1 + [-height/3*np.sin(theta),-height/3*np.cos(theta)]
-    """
-    print('height: ' + str(height));
-    print('distanceEyes: ' + str(distanceEyes));
-    print('angle: ' + str(angle));
-    print('right eye: ' + str(rightmostEye));
-    print('right eye: ' + str(leftmostEye));
-    print('mean eye: ' + str(mean_eye));
-    print('firstPoint: ' + str(firstPoint));
-    print('oppositePoint: ' + str(oppositePoint));
-    """    
+     
 
     return p1,p2,p3,p4,mean_eye
 
@@ -219,30 +205,33 @@ def landmark_image(image):
         return image, ()
     image_with_landmarks = annotate_landmarks(image, landmarks)
     return image_with_landmarks,landmarks
-    #cv2.imshow('Result', image_with_landmarks)
-    #cv2.imwrite('image_with_landmarks.jpg',image_with_landmarks)
-    #cv2.waitKey(0)
-    #cv2.destroyAllWindows()
 
-# webcam
-#cap = cv2.VideoCapture(0)
-
-#video
 cap = cv2.VideoCapture(0)
 
-count = 0
+def Stabilize(points):
+    d = []
+    for i in range(0,4):
+        
+        diff = abs((points[i]-points[i+4])/points[i+4])
+        
+        if diff[0]<=0.025 and diff[1]<=0.025:
+            d.append(points[i+4])
+        else:
+            d.append((points[i]+points[i+4])/2)
+    return d
 
+frame_count=0
+Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);
+t0 = time.time()
+times = []
 
-bpm = 0
-Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);Avg_signal = np.array([]);elapsed = []
-   # Start time
+bpm_old1 = 80
+bpm_old2 = 80
+count  = 0
+p1_old = 0;p2_old=0;p3_old=0;p4_old=0
+while cap.isOpened():
 
-frame_count = 0
-
-
-while True:
     success,image = cap.read()
-    
     height, width = image.shape[:2];
     start_row, start_col = int(height * .1), int(width * .2)
     end_row, end_col = int(height * .9), int(width * .8)
@@ -252,76 +241,58 @@ while True:
     warp = image.copy();
     if landmarks != "error" and landmarks!=():
         p1,p2,p3,p4,mean_eye = forehead(landmarks)
+        points = [p1,p2,p3,p4,p1_old,p2_old,p3_old,p4_old]
+        points = Stabilize(points)
+        p1 = points[0]
+        p2 = points[1]
+        p3 = points[2]
+        p4 = points[3]
+        
+        p1_old = p1
+        p2_old = p2
+        p3_old = p3
+        p4_old = p4
         pts = np.array( [p1, p2, p3, p4], np.int32)
-        #reshape our points in form  required by polylines
         pts = pts.reshape((-1,1,2))
         cv2.polylines(image, [pts], True, (0,0,255), 3)
-        #cv2.rectangle(image, tuple(firstPoint.astype(int)), tuple(oppositePoint.astype(int)), (127,50,127), -1)
         cv2.circle(image, tuple(p1.astype(int)), 3, color=(0, 255, 255))
         cv2.circle(image, tuple(mean_eye.astype(int)), 3, color=(0, 255, 255))
-        #ROI = imageOrg[p4.astype(int)[1]:p1.astype(int)[1],p1.astype(int)[0]:p4.astype(int)[0]]
         mask = np.zeros(imageOrg.shape, dtype=np.uint8)
         roi_corners = np.array([[p1, p2, p3,p4]], dtype=np.int32)
-        # fill the ROI so it doesn't get wiped out when the mask is applied
         channel_count = imageOrg.shape[2]  # i.e. 3 or 4 depending on your image
         ignore_mask_color = (255,)*channel_count
         cv2.fillPoly(mask, roi_corners, ignore_mask_color)
-        # from Masterfool: use cv2.fillConvexPoly if you know it's convex
         # apply the mask
         roi = cv2.bitwise_and(imageOrg, mask)
-        
+        cv2.imshow("ROI",roi)
         B, G, R = cv2.split(roi)
-        if(frame_count==50):
-            t = time.time()
+        
+        if(frame_count==15):
             print(1)
-        if(frame_count>=50):
-            elapsed.append (time.time()-t)
+            t0 = time.time()
+        if(frame_count>=15):
+            times.append(time.time() - t0)
             Bsig = np.append(Bsig,np.mean(B[np.nonzero(B)]))
             Gsig = np.append(Gsig,np.mean(G[np.nonzero(G)]))
             Rsig = np.append(Rsig,np.mean(R[np.nonzero(R)]))
-            Avg_signal = np.append(Avg_signal,(np.mean(B[np.nonzero(B)])+np.mean(G[np.nonzero(G)])+np.mean(R[np.nonzero(R)]))/3)
-            print(time.time()-t)
+     
+    cv2.imshow('Image', image)
+      
             
-        cv2.imshow('Image', image)
-    if cv2.waitKey(1) == 13 or frame_count==600:  # 13 is the Enter Key
+    if cv2.waitKey(1) == 13 or (len(times)>0 and times[-1]>=10):
+        
         break
-   
     frame_count+=1
 
 
-
-fps = (frame_count-50)/elapsed[-1]
-
-Bsig = sp.signal_detrending(Bsig)
-Gsig = sp.signal_detrending(Gsig)
-Rsig = sp.signal_detrending(Rsig)
-
-Bsig = normalize(Bsig)
-Gsig = normalize(Gsig)
-Rsig = normalize(Rsig)
-
-
-bandpass_filter = signal.firwin(128,0.8,3,window = 'hamming')
-
-
-
-dataset = pd.DataFrame({'Gsig':Gsig,'Rsig':Rsig,'Bsig':Bsig})
-features = ['Gsig','Bsig','Rsig']
-data = dataset.loc[:,features].values
-
-
-pca = PCA(n_components=1)
-pca_res = pca.fit_transform(data)
-
-
-principalDf = pd.DataFrame(data = pca_res,columns = ['principal component 1'])
-PC1 = principalDf.loc[:,'principal component 1'].values
-PC1 = PC1 - np.mean(PC1)
-PC1 = np.convolve(PC1,bandpass_filter)
-
-fft_of_interest, freqs_of_interest = sp.fft(PC1, fps)
-max_arg = np.argmax(fft_of_interest)
-bpm = freqs_of_interest[max_arg]
-print("bpm = " +str(bpm))
+np.save('Rsig',Rsig)
+np.save('Bsig',Bsig)
+np.save('Gsig',Gsig)
+np.save('times',times)
+fps = (frame_count-15)/times[-1]
+f = open("fps.txt","w")
+f.write(str(fps))
+f.close()
+print(fps)
 cap.release()
 cv2.destroyAllWindows()
