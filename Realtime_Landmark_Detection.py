@@ -1,42 +1,33 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Sep  9 15:40:03 2019
+
+@author: Omar Al Jaroudi
+"""
+
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import cv2
 import dlib
 import numpy as np
-
-from collections import OrderedDict
-from math import sqrt
-from math import acos
-from math import pi
+import time
+import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
-import time
 from sklearn.decomposition import PCA
 from signal_processing import Signal_processing
 sp = Signal_processing()
 from sklearn.preprocessing import StandardScaler
-from statistics import stdev
-import pandas as pd
+from math import acos,pi,sqrt
+from scipy.signal import firwin
 from matplotlib import pyplot as plt
-from scipy.ndimage.filters import gaussian_filter1d
-
-LANDMARK_PTS = OrderedDict([
-    ('mouth', (48, 68)),
-    ('right_eyebrow', (17, 22)),
-    ('left_eyebrow', (22, 27)),
-    ('right_eye', (36, 42)),
-    ('left_eye', (42, 48)),
-    ('nose', (27, 35)),
-    ('jaw', (0, 17)),
-])
-
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('Face_Predictor.dat')
 
 def normalize(l):
     l = np.array(l)
-    std = stdev(l)
-    l = l-np.mean(l)
+    std = np.std(l,axis = 0)
+    l = l-np.mean(l,axis = 0)
     l = l/std
     return l
 def length(v):
@@ -56,10 +47,6 @@ def angle_clockwise(A, B):
         return inner
     else: # if the det > 0 then A is immediately clockwise of B
         return 360-inner
-    
-#cascade_path='haarcascade_frontalface_default.xml'
-#cascade = cv2.CascadeClassifier(cascade_path)
-detector = dlib.get_frontal_face_detector()
 
 
 def unit_vector(vector):
@@ -102,7 +89,6 @@ def top_lip(landmarks):
         top_lip_pts.append(landmarks[i])
     for i in range(61,64):
         top_lip_pts.append(landmarks[i])
-    top_lip_all_pts = np.squeeze(np.asarray(top_lip_pts))
     top_lip_mean = np.mean(top_lip_pts, axis=0)
     return int(top_lip_mean[:,1])
 
@@ -112,7 +98,6 @@ def bottom_lip(landmarks):
         bottom_lip_pts.append(landmarks[i])
     for i in range(56,59):
         bottom_lip_pts.append(landmarks[i])
-    bottom_lip_all_pts = np.squeeze(np.asarray(bottom_lip_pts))
     bottom_lip_mean = np.mean(bottom_lip_pts, axis=0)
     return int(bottom_lip_mean[:,1])
 
@@ -126,8 +111,6 @@ def eye_brows(landmarks):
         left_eyebrow.append(landmarks[i])
     right_eyebrow = np.squeeze(np.asarray(right_eyebrow))
     left_eyebrow = np.squeeze(np.asarray(left_eyebrow))
-    max_right = right_eyebrow[np.argmax(right_eyebrow,0)[1],:]
-    max_left = left_eyebrow[np.argmax(left_eyebrow,0)[1],:]
 
     return 0
 
@@ -153,7 +136,6 @@ def forehead(landmarks):
         top_lip_pts.append(landmarks[i])
     for i in range(61,64):
         top_lip_pts.append(landmarks[i])
-    top_lip_all_pts = np.squeeze(np.asarray(top_lip_pts))
     top_lip_mean = np.mean(top_lip_pts, axis=0)
     top_lip_mean = np.array(top_lip_mean);
     height = np.linalg.norm(mean_eye-top_lip_mean);
@@ -206,32 +188,137 @@ def landmark_image(image):
     image_with_landmarks = annotate_landmarks(image, landmarks)
     return image_with_landmarks,landmarks
 
-cap = cv2.VideoCapture(0)
-
 def Stabilize(points):
     d = []
     for i in range(0,4):
         
         diff = abs((points[i]-points[i+4])/points[i+4])
         
-        if diff[0]<=0.025 and diff[1]<=0.025:
+        if diff[0]<=0.03 and diff[1]<=0.03:
             d.append(points[i+4])
         else:
             d.append((points[i]+points[i+4])/2)
     return d
 
+def bandpass_firwin(ntaps, lowcut, highcut, fs, window='hamming'):
+    nyq = 0.5 * fs
+    taps = firwin(ntaps, [lowcut, highcut], nyq=nyq, pass_zero=False,
+                  window=window, scale=False)
+    return taps
+
+def plotSpectrum(y,fs):
+    
+    xF = np.fft.fft(y)
+    N = len(xF)
+    xF = xF[0:int(N/2)]
+    fr = np.linspace(0,fs/2,N/2)
+
+    plt.plot(fr,abs(xF)**2)
+    plt.xlim(0.6,4)
+    plt.show()
+    
+def Analyze(Rsig,Gsig,Bsig,fps,old):
+
+    Gsig1 = sp.detrend(Gsig,10)
+    Rsig = sp.detrend(Rsig,10)
+    
+    Gsig1 = normalize(Gsig1)
+    Rsig = normalize(Rsig)
+    
+    
+    bandpass_filter = bandpass_firwin(128,0.7,3,fps,'hamming')
+    
+   
+    dataset = pd.DataFrame({'Gsig':Gsig1,'Rsig':Rsig})
+    features = ['Gsig','Rsig']
+    data = dataset.loc[:,features].values
+    dataS = StandardScaler().fit_transform(data)
+    pca = PCA(n_components=2)
+    pca_res = pca.fit_transform(dataS)
+    
+    principalDf = pd.DataFrame(data = pca_res,columns = ['PC1','PC2'])
+    
+    
+    PC1 = principalDf.loc[:,'PC1'].values
+    PC2 = principalDf.loc[:,'PC2'].values
+
+    
+    PC1 = np.convolve(PC1,bandpass_filter)
+    PC2 = np.convolve(PC2,bandpass_filter)    
+    
+    xF = np.fft.fft(PC1)
+    N = len(xF)
+    xF = xF[0:int(N/2)]
+    psd  = abs(xF)**2
+    ps1 = np.max(psd)
+    
+    xF = np.fft.fft(PC2)
+    N = len(xF)
+    xF = xF[0:int(N/2)]
+    psd  = abs(xF)**2
+    ps2 = np.max(psd)
+  
+    Source = np.array([])
+    
+    if(ps1>=ps2):
+        Source = PC1
+    else:
+        Source = PC2
+        
+    w = np.fft.fft(Source)
+    freqs = np.fft.fftfreq(len(w))
+    idx = np.argmax(np.abs(w))
+    freq = freqs[idx]
+    freq_in_hertz = abs(freq * fps)
+    bpm = freq_in_hertz*60
+    
+    bpm_Gsig = AnalyzeGsig(Gsig,fps)
+    if old==0:
+        bpm =  (bpm_Gsig+bpm)/2
+            
+     
+    elif abs(bpm-old)>=20:
+        if abs(bpm_Gsig-old)<20:
+            bpm =  bpm_Gsig
+        else:
+            bpm = 0.8*old + bpm*0.2
+    else:
+        bpm = 0.9*bpm + old*0.1
+    bpm = int(bpm)
+    print("bpm = " +str(bpm))
+    
+    
+    
+    return bpm
+def AnalyzeGsig(Gsig,fps):
+    bandpass_filter = bandpass_firwin(128,0.7,3,fps,'hamming')
+
+    Gsig1 = sp.detrend(Gsig,10)
+    Gsig1 = normalize(Gsig1)
+    Gsig1 = np.convolve(Gsig1,bandpass_filter)
+    w = np.fft.fft(Gsig1)
+    freqs = np.fft.fftfreq(len(w))
+    idx = np.argmax(np.abs(w))
+    freq = freqs[idx]
+    freq_in_hertz = abs(freq * fps)
+    bpm3 = freq_in_hertz*60
+    return bpm3
+    
+path = ""
+cap = cv2.VideoCapture('./Offline Videos/Jad'+path+'.mp4')
+
 frame_count=0
 Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);
 t0 = time.time()
 times = []
-
-bpm_old1 = 80
-bpm_old2 = 80
-count  = 0
-p1_old = 0;p2_old=0;p3_old=0;p4_old=0
+bpm_old = 0
+p1_old = 0;p2_old = 0;p3_old = 0;p4_old = 0
+heartRate = []
 while cap.isOpened():
 
     success,image = cap.read()
+    if(cv2.waitKey(1)==13 or success==False):
+        break
     height, width = image.shape[:2];
     start_row, start_col = int(height * .1), int(width * .2)
     end_row, end_col = int(height * .9), int(width * .8)
@@ -266,33 +353,30 @@ while cap.isOpened():
         roi = cv2.bitwise_and(imageOrg, mask)
         cv2.imshow("ROI",roi)
         B, G, R = cv2.split(roi)
-        
-        if(frame_count==15):
+       
+
+        if(frame_count==150):
             print(1)
             t0 = time.time()
-        if(frame_count>=15):
+        
+        if(frame_count>=150):
             times.append(time.time() - t0)
             Bsig = np.append(Bsig,np.mean(B[np.nonzero(B)]))
             Gsig = np.append(Gsig,np.mean(G[np.nonzero(G)]))
             Rsig = np.append(Rsig,np.mean(R[np.nonzero(R)]))
-     
-    cv2.imshow('Image', image)
-      
             
-    if cv2.waitKey(1) == 13 or (len(times)>0 and times[-1]>=10):
-        
-        break
+            
+    cv2.imshow('Image', image)
+    
+    if (frame_count==420):
+        bpm_old = Analyze(Rsig,Gsig,Bsig,30,bpm_old)
+        heartRate.append(bpm_old)
+        times = []
+        Bsig =Bsig[90:]; Gsig = Gsig[90:]; Rsig = Rsig[90:];
+        frame_count = 330
     frame_count+=1
 
-
-np.save('Rsig',Rsig)
-np.save('Bsig',Bsig)
-np.save('Gsig',Gsig)
-np.save('times',times)
-fps = (frame_count-15)/times[-1]
-f = open("fps.txt","w")
-f.write(str(fps))
-f.close()
-print(fps)
+plt.plot(heartRate)
+plt.show()
 cap.release()
 cv2.destroyAllWindows()
