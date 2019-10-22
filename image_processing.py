@@ -9,7 +9,9 @@ import numpy as np
 import dlib
 import cv2
 
-
+"""
+This is a utility class which contains functions related to forehead detection
+"""
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('Face_Predictor.dat')
@@ -19,16 +21,41 @@ class Image_processing():
         self.a = 1
         
     def length(self,v):
+        """
+        @input: v 2D vector
+        @function: computes the length of the vector: x^2+y^2
+        @return: return the length of the 2D vector
+        """
         return sqrt(v[0]**2+v[1]**2)
     def dot_product(self,v,w):
+        """
+        @input: 2 2D vector's v and w 
+        @function: computes the dot product v.w
+        @return: scaler equal to the dot product of the two vectors
+        """
        return v[0]*w[0]+v[1]*w[1]
     def determinant(self,v,w):
+        """
+        @input: vectors v w
+        @function: computes determinant
+        @return: scaler equal to determinant result
+        """
        return v[0]*w[1]-v[1]*w[0]
     def inner_angle(self,v,w):
+        """
+        @input: vectors v,w
+        @function: computes the inner angle between v and w
+        @return: returns the angle in degrees
+        """
        cosx=self.dot_product(v,w)/(self.length(v)*self.length(w))
        rad=acos(cosx) # in radians
        return rad*180/pi # returns degrees
     def angle_clockwise(self,A, B):
+        """
+        @input: two vectors A and B
+        @function: computes the clockwise angle between A and B
+        @return: returns the clockwise angle between A and B in degrees
+        """
         inner=self.inner_angle(A,B)
         det = self.determinant(A,B)
         if det<0: #this is a property of the det. If the det < 0 then B is clockwise of A
@@ -38,17 +65,30 @@ class Image_processing():
     
     
     def unit_vector(self,vector):
-       
+        """
+        @input: vector
+        @function: divides vector by its norm
+        @return: unit vector in that direction
+        """
         return vector / np.linalg.norm(vector)
     
     def angle_between(self,v1, v2):
-    
+        """
+        @input: two vectors v1 and v2
+        @function: compute the angle between the 2 vectors
+        @return: returns the angle bewteen them
+        """
         v1_u = self.unit_vector(v1)
         v2_u = self.unit_vector(v2)
         return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
     
     
     def get_landmarks(self,im):
+        """
+        @input: takes current frame im
+        @function: gets the landmark locations 
+        @return: a matrix containing landmark locations
+        """
         rects = detector(im, 1)
     
         if len(rects) > 1:
@@ -59,6 +99,11 @@ class Image_processing():
     
     
     def annotate_landmarks(self,im, landmarks):
+        """
+        @input:landmarks
+        @function:draws a circle over landmarks
+        @return: modified image
+        """
         im = im.copy()
         for idx, point in enumerate(landmarks):
             pos = (point[0, 0], point[0, 1])
@@ -72,6 +117,11 @@ class Image_processing():
         return im
     
     def top_lip(self,landmarks):
+        """
+        @input: landmark matrix
+        @function: computes the location of of the mean of the top lip
+        @return: mean of top lip 
+        """
         top_lip_pts = []
         for i in range(50,53):
             top_lip_pts.append(landmarks[i])
@@ -81,6 +131,11 @@ class Image_processing():
         return int(top_lip_mean[:,1])
     
     def bottom_lip(self,landmarks):
+        """
+        @input: landmark matrix
+        @function: computes botton lip mean 
+        @return: returns bottom lip mean
+        """
         bottom_lip_pts = []
         for i in range(65,68):
             bottom_lip_pts.append(landmarks[i])
@@ -90,7 +145,12 @@ class Image_processing():
         return int(bottom_lip_mean[:,1])
     
     
-    def eye_brows(self,landmarks): 
+    def eye_brows(self,landmarks):
+        """
+        @input:landmark matrix
+        @function: computes the right and left eye brow postiions
+        @return:nothing
+        """ 
         left_eyebrow =[];
         right_eyebrow =[];
         for i in range(17,21):
@@ -104,6 +164,11 @@ class Image_processing():
     
     
     def forehead(self,landmarks):
+        """
+        @input:landamark matrix
+        @function: computes forehead location based on well known landmarks of previous functions
+        @return: forehead coordinates
+        """
         landmarks= np.array(landmarks);
         if landmarks == "error":
             return [-1,-1], [-1,-1]
@@ -158,6 +223,8 @@ class Image_processing():
     
         return p1,p2,p3,p4,mean_eye
     
+    """
+    #currently not in use
     def mouth_open(self,image):
         landmarks = self.get_landmarks(image)
         if landmarks == "error":
@@ -168,8 +235,15 @@ class Image_processing():
         bottom_lip_center = self.bottom_lip(landmarks)
         lip_distance = abs(top_lip_center - bottom_lip_center)
         return image_with_landmarks, lip_distance
+    """
     
     def landmark_image(self,image):
+        """
+        @input: image frame
+        @function: computes image with landmarks and landmarks
+        @error: throws error if landmarks cant be computed
+        @return: returns the image with landmarks as well as landmarks seperately
+        """
         landmarks = self.get_landmarks(image)
         if landmarks == "error":
             return image, ()
@@ -177,6 +251,12 @@ class Image_processing():
         return image_with_landmarks,landmarks
     
     def Stabilize(self,points):
+        """
+        @input: takes two points
+        @function:computes the difference between them and 
+        if greater than a given threshold takes the mean of old and new
+        @return: stabilization point
+        """
         d = []
         for i in range(0,4):
             
