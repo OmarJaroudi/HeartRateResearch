@@ -113,8 +113,6 @@ class Signal_processing():
         freq_in_hertz = abs(freq * fps)
         bpm = int(freq_in_hertz*60)
         
-        peaks,_ = scipy.signal.find_peaks(Source,distance = 300/bpm)
-        print(len(peaks))
         
         print("bpm = "+str(bpm))
         return bpm
