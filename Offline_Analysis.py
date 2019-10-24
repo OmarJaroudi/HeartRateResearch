@@ -20,9 +20,9 @@ sp = Signal_processing()
 ip = Image_processing()
 
     
-path = "last"
+path = "133"
 cap = cv2.VideoCapture('./Offline Videos/Omar_'+path+'.mp4')
-
+count = 0
 frame_count=0
 Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);
 t0 = time.time()
@@ -73,28 +73,30 @@ while cap.isOpened():
         cv2.imshow("ROI",roi)
         B, G, R = cv2.split(roi)
 
-        if(frame_count==150):
+        if(count==50):
             print(1)
             t0 = time.time()
         
-        if(frame_count>=150):
+        if(count>=50):
             times.append(time.time() - t0)
             Bsig = np.append(Bsig,np.mean(B[np.nonzero(B)]))
             Gsig = np.append(Gsig,np.mean(G[np.nonzero(G)]))
             Rsig = np.append(Rsig,np.mean(R[np.nonzero(R)]))
-            
+            frame_count+=1
             
     cv2.imshow('Image', image)
     
-    if (frame_count==449):
-        bpm = sp.Analyze(Rsig,Bsig,Gsig,fps)
+    if (frame_count==300):
+#        bpm = sp.Analyze(Rsig,Gsig,Bsig,fps)
+        bpm = sp.Analyze(Rsig,Gsig,Bsig,fps)
         heartRate.append(bpm)
         times = []
         Bsig =Bsig[90:]; Gsig = Gsig[90:]; Rsig = Rsig[90:];
-        frame_count = 359
-    frame_count+=1
-
+        frame_count = 210
+    count+=1
 plt.plot(heartRate)
 plt.show()
 cap.release()
 cv2.destroyAllWindows()
+
+
