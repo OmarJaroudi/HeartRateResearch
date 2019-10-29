@@ -9,4 +9,4 @@
 <p> The one with the highest peak is the raw PPG signal </p>
 <p> Note: if the peaks of the PSD are within 1000 units of each other, we select the signal based on the previous heart rate reading </p>
 
-<img src = "HR_Detection_Flow.png" alt = "research summary"/>
+<img src = "flow_diagram.png" alt = "research summary"/>
