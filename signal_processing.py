@@ -39,17 +39,21 @@ class Signal_processing():
                       window=window, scale=False)
         return taps
 
-    
+    def running_mean(self,x, N):
+        cumsum = np.cumsum(np.insert(x, 0, 0)) 
+        return (cumsum[N:] - cumsum[:-N]) / float(N)
+
+        
     def Analyze(self,Rsig,Gsig,Bsig,fps,old):
+        
         """
-        @input:     Rsig = temporally accumulated values of Red pixels(list)
-        @input:     Gsig = temporally accumulated values of Green pixels(list)
-        @input:     Bsig = temporally accumulated values of Blue pixels(list)
+        @input:     Rsig(list)  = temporally accumulated values of Red pixels
+        @input:     Gsig(list)  = temporally accumulated values of Green pixels 
+        @input:     Bsig(list)  = temporally accumulated values of Blue pixels 
         @input:     fps = sampling frequency i.e. frame rate of camera (int/double)
         @input:     old = heart rate reading computed in previous window (int)
         
-        @function:  -> detrend each signal
-                    -> normalize each signal
+        @function:
                     ->convolve each signal with a bandpass filter
                     -> merge signals in pandas DataFrame
                     -> perform PCA
@@ -67,28 +71,21 @@ class Signal_processing():
         Bsig1 = Bsig
         Rsig1 = Rsig
         
-        #detrending each signal using the detrend method with order 10
-        Gsig1 = self.detrend(Gsig1,10)
-        Rsig1 = self.detrend(Rsig1,10)
-        Bsig1 = self.detrend(Bsig1,10)
-        
-        #normalizing the data
-        Gsig1 = self.normalize(Gsig1)
-        Rsig1 = self.normalize(Rsig1)
-        Bsig1 = self.normalize(Bsig1)
-        
         #preparing the bandpass filter
         bandpass_filter = self.bandpass_firwin(128,0.7,3,fps,'hamming')
     
         Gsig1 = np.convolve(Gsig1,bandpass_filter)
         Rsig1 = np.convolve(Rsig1,bandpass_filter)
         Bsig1 = np.convolve(Bsig1,bandpass_filter)
-    
+        
+        Gsig1 = Gsig1[50:350]
+        Bsig1 = Bsig1[50:350]
+        Rsig1 = Rsig1[50:350]
         #preparing the pandas Dataframe   
         dataset = pd.DataFrame({'Gsig':Gsig1,'Rsig':Rsig1,'Bsig':Bsig1})
         features = ['Gsig','Rsig','Bsig']
         data = dataset.loc[:,features].values
-        pca = PCA(n_components=3) #preparing the PCA model 
+        pca = PCA (n_components=3) #preparing the PCA model 
         pca_res = pca.fit_transform(data) #actually performing PCA
         
         principalDf = pd.DataFrame(data = pca_res,columns = ['PC1','PC2','PC3'])
@@ -96,6 +93,17 @@ class Signal_processing():
         #seperating each principal component
         PC1 = principalDf.loc[:,'PC1'].values
         PC2 = principalDf.loc[:,'PC2'].values
+
+
+        #computing the PSD for each component
+        ps1 = np.abs(np.fft.fft(PC1))**2
+        ps2 = np.abs(np.fft.fft(PC2))**2
+        ps1 = max(ps1)
+        ps2 = max(ps2)
+        
+    
+        PC1 = self.running_mean(PC1,2)
+        PC2 = self.running_mean(PC2,2)
         
         #performing fourier analysis
         w = np.fft.fft(PC1)
@@ -104,6 +112,7 @@ class Signal_processing():
         freq = freqs[idx]
         freq_in_hertz = abs(freq * fps)
         bpm1 = int(freq_in_hertz*60)
+
         
         #performing fourier analysis
         w = np.fft.fft(PC2)
@@ -114,84 +123,29 @@ class Signal_processing():
         bpm2 = int(freq_in_hertz*60)
         
         
-        #computing the PSD for each component
-        ps1 = np.abs(np.fft.fft(PC1))**2
-        ps2 = np.abs(np.fft.fft(PC2))**2
-    
-        ps1 = max(ps1)
-        ps2 = max(ps2)
+        
         #choosing the source signal to be used for fourier analysis based on PSD peak
         if(ps1-ps2)>1000:
-            print("bpm = "+str(bpm1))
             return (bpm1,PC1)
         elif (ps2-ps1)>1000:
-            print("bpm = "+str(bpm2))
             return bpm2,PC2
         elif abs(ps1-ps2)<1000:
             if old==0:
-                print("bpm = "+str(bpm1))
                 return bpm1,PC1
             else:
                 if abs(bpm1-old)<abs(bpm2-old):
-                    print("bpm = "+str(bpm1))
                     return bpm1,PC1
                 else:
-                    print("bpm = "+str(bpm2))
                     return bpm2,PC2
-        
-    def detrend(self,signal, Lambda):
-        # Copyright (c) 2017 Idiap Research Institute, http://www.idiap.ch/
-        # Written by Guillaume Heusch <guillaume.heusch@idiap.ch>,
-        # 
-        # This file is part of bob.rpgg.base.
-        # 
-        # bob.rppg.base is free software: you can redistribute it and/or modify
-        # it under the terms of the GNU General Public License version 3 as
-        # published by the Free Software Foundation.
-        # 
-        # bob.rppg.base is distributed in the hope that it will be useful,
-        # but WITHOUT ANY WARRANTY; without even the implied warranty of
-        # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-        # GNU General Public License for more details.
-        # 
-        # You should have received a copy of the GNU General Public License
-        # along with bob.rppg.base. If not, see <http://www.gnu.org/licenses/>.
-        
-        """
-        This code is based on the following article "An advanced detrending method with application
-        to HRV analysis". Tarvainen et al., IEEE Trans on Biomedical Engineering, 2002.
-          
-        **Parameters**
-        ``signal`` (1d numpy array):
-        The signal where you want to remove the trend.
-        
-        ``Lambda`` (int):
-        The smoothing parameter.
-        
-        **Returns**
-          
-        ``filtered_signal`` (1d numpy array):
-        The detrended signal.
-          """
-        signal_length = signal.shape[0]
-
-        # observation matrix
-        H = np.identity(signal_length) 
-        
-        # second-order difference matrix
-        from scipy.sparse import spdiags
-        ones = np.ones(signal_length)
-        minus_twos = -2*np.ones(signal_length)
-        diags_data = np.array([ones, minus_twos, ones])
-        diags_index = np.array([0, 1, 2])
-        D = spdiags(diags_data, diags_index, (signal_length-2), signal_length).toarray()
-        filtered_signal = np.dot((H - np.linalg.inv(H + (Lambda**2) * np.dot(D.T, D))), signal)
-        
-        return filtered_signal
          
     
 
     
+
+        
+    
+    
+
 
         
         
