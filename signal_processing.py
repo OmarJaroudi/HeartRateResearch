@@ -39,8 +39,13 @@ class Signal_processing():
                       window=window, scale=False)
         return taps
 
-    
+    def running_mean(self,x, N):
+        cumsum = np.cumsum(np.insert(x, 0, 0)) 
+        return (cumsum[N:] - cumsum[:-N]) / float(N)
+
+        
     def Analyze(self,Rsig,Gsig,Bsig,fps,old):
+        
         """
         @input:     Rsig = temporally accumulated values of Red pixels(list)
         @input:     Gsig = temporally accumulated values of Green pixels(list)
@@ -48,9 +53,7 @@ class Signal_processing():
         @input:     fps = sampling frequency i.e. frame rate of camera (int/double)
         @input:     old = heart rate reading computed in previous window (int)
         
-        @function:  -> detrend each signal
-                    -> normalize each signal
-                    ->convolve each signal with a bandpass filter
+        @function:  -> convolve each signal with a bandpass filter
                     -> merge signals in pandas DataFrame
                     -> perform PCA
                     -> output = 3 signals (principal components)
@@ -67,28 +70,21 @@ class Signal_processing():
         Bsig1 = Bsig
         Rsig1 = Rsig
         
-        #detrending each signal using the detrend method with order 10
-        Gsig1 = self.detrend(Gsig1,10)
-        Rsig1 = self.detrend(Rsig1,10)
-        Bsig1 = self.detrend(Bsig1,10)
-        
-        #normalizing the data
-        Gsig1 = self.normalize(Gsig1)
-        Rsig1 = self.normalize(Rsig1)
-        Bsig1 = self.normalize(Bsig1)
-        
         #preparing the bandpass filter
         bandpass_filter = self.bandpass_firwin(128,0.7,3,fps,'hamming')
     
         Gsig1 = np.convolve(Gsig1,bandpass_filter)
         Rsig1 = np.convolve(Rsig1,bandpass_filter)
         Bsig1 = np.convolve(Bsig1,bandpass_filter)
-    
+        
+        Gsig1 = Gsig1[50:350]
+        Bsig1 = Bsig1[50:350]
+        Rsig1 = Rsig1[50:350]
         #preparing the pandas Dataframe   
         dataset = pd.DataFrame({'Gsig':Gsig1,'Rsig':Rsig1,'Bsig':Bsig1})
         features = ['Gsig','Rsig','Bsig']
         data = dataset.loc[:,features].values
-        pca = PCA(n_components=3) #preparing the PCA model 
+        pca = PCA (n_components=3) #preparing the PCA model 
         pca_res = pca.fit_transform(data) #actually performing PCA
         
         principalDf = pd.DataFrame(data = pca_res,columns = ['PC1','PC2','PC3'])
@@ -96,7 +92,16 @@ class Signal_processing():
         #seperating each principal component
         PC1 = principalDf.loc[:,'PC1'].values
         PC2 = principalDf.loc[:,'PC2'].values
+        PC3 = principalDf.loc[:,'PC3'].values
+
+
+        #computing the PSD for each component
+        ps1 = np.abs(np.fft.fft(PC1))**2
+        ps2 = np.abs(np.fft.fft(PC2))**2
+        ps1 = max(ps1)
+        ps2 = max(ps2)
         
+
         #performing fourier analysis
         w = np.fft.fft(PC1)
         freqs = np.fft.fftfreq(len(w))
@@ -104,6 +109,7 @@ class Signal_processing():
         freq = freqs[idx]
         freq_in_hertz = abs(freq * fps)
         bpm1 = int(freq_in_hertz*60)
+
         
         #performing fourier analysis
         w = np.fft.fft(PC2)
@@ -114,30 +120,19 @@ class Signal_processing():
         bpm2 = int(freq_in_hertz*60)
         
         
-        #computing the PSD for each component
-        ps1 = np.abs(np.fft.fft(PC1))**2
-        ps2 = np.abs(np.fft.fft(PC2))**2
-    
-        ps1 = max(ps1)
-        ps2 = max(ps2)
         #choosing the source signal to be used for fourier analysis based on PSD peak
         if(ps1-ps2)>1000:
-            print("bpm = "+str(bpm1))
-            return (bpm1,PC1)
+            return (bpm1,PC1[210:])
         elif (ps2-ps1)>1000:
-            print("bpm = "+str(bpm2))
-            return bpm2,PC2
+            return bpm2,PC2[210:]
         elif abs(ps1-ps2)<1000:
             if old==0:
-                print("bpm = "+str(bpm1))
                 return bpm1,PC1
             else:
                 if abs(bpm1-old)<abs(bpm2-old):
-                    print("bpm = "+str(bpm1))
-                    return bpm1,PC1
+                    return bpm1,PC1[210:]
                 else:
-                    print("bpm = "+str(bpm2))
-                    return bpm2,PC2
+                    return bpm2,PC2[210:]
         
     def detrend(self,signal, Lambda):
         # Copyright (c) 2017 Idiap Research Institute, http://www.idiap.ch/
@@ -191,26 +186,28 @@ class Signal_processing():
          
     
 
-    def HRV(self,data,Min,Max):
+    def HRV(self,data,Min,Max,window,IBI=False,SDNN = False,BPM = False):
+        hr = []
         """
         @input:     data = raw PPG signal to perform HRV analysis
         @input:     Min = minimum extracted heart rate from the PPG signal over time
         @input:     Max = maximum extracted heart rate from the PPg signal over time
         
-        @function:  perform HRV analysis by computing seevral HRV metrics
+        @function:  perform HRV analysis by computing several HRV metrics
                     -> bandpass filter the PPG signal by using Min and Max as bounding frequencies
                     -> interpolate the PPg signal to a frequency of 240Hz
                     -> compute the peaks in a 0.25 sec sliding window
                     -> in each 10 sec window:
                         -> reject peaks that are 20% different from the median
-                        -> reject the window as a whole if more than 50% of the peask have been removed
+                        -> reject the window as a whole if more than 50% of the peaks have been removed
                     
         """
-        low = (Min-5)/60
-        high = (Max-5)/60
-        f = self.butter_bandpass_filter(data,low,high,30,2)
-        w = len(data)/30
-        f = self.interpolate(data,30,240,w)
+#        low = (Min-5)/60
+#        high = (Max-5)/60
+        f_old = len(data)/window
+#        f = self.butter_bandpass_filter(data,low,high,f_old,2)
+        
+        f = self.interpolate(data,f_old,240,window)
 
         peaks = []
         x = 0
@@ -221,11 +218,11 @@ class Signal_processing():
             temp = f[j:j+2400]
             i = 0
             while i <= (len(temp)-60):
-                window = temp[i:i+60]
+                timeWindow = temp[i:i+60]
                 m = -99999
                 idx = 0
                 
-                for y in window:
+                for y in timeWindow:
                     if y>m:
                         m = y
                         idx = x
@@ -257,21 +254,26 @@ class Signal_processing():
             for i in intervals:
                 if (abs(i-median)/((median+i)/2))<=0.2:
                     tempIntervals = np.append(tempIntervals,i)
-            if (len(tempIntervals)>0.5*len(intervals)):
+            if (len(tempIntervals)>0.3*len(intervals)):
+                hr.append(60/np.mean(tempIntervals))
                 correctedIntervals = np.append(correctedIntervals,tempIntervals)
+            if len(f)-j<2400:
+                j = len(f)-2400
+                continue
             j+=2400
-
+            
         correctedIntervals.flatten()
-        print(np.mean(correctedIntervals)*1000)
-        print("SDNN = " +str(np.std(correctedIntervals)*1000))
+        if BPM==True:
+            print("HR = " + str(np.mean(hr)))
+        if IBI==True:
+            print("IBI = " + str(np.mean(correctedIntervals)*1000))
+        if SDNN==True and window>70:
+            print("SDNN = " + str(np.std(correctedIntervals)*1000))
+        elif SDNN==True and window<70:
+            print("Warning: SDNN value requested but window size is less than 70 sec")
         
-        RMSSD = 0
-        for i in range(1,len(correctedIntervals)):
-            diff = (correctedIntervals[i]-correctedIntervals[i-1])/240
-            RMSSD +=math.pow(diff,2)
-        RMSSD = (math.sqrt(RMSSD))*1000
-        print("RMSSD = " +str(RMSSD))
-
+        
+        return hr
         
     def butter_bandpass(self,lowcut, highcut, fs, order=5):
         """
