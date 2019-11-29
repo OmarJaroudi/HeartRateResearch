@@ -20,11 +20,12 @@ from image_processing import Image_processing
 sp = Signal_processing()
 ip = Image_processing()
 import pickle
-#
-    
+
+cam = input("CAM ")
 path = ""
-cap = cv2.VideoCapture('./Offline Videos/Omar_133.mp4')
+cap = cv2.VideoCapture(0)
 count = 0
+window_counter = 0
 frame_count=0
 Bsig =np.array([]); Gsig =np.array([]); Rsig =np.array([]);
 t0 = time.time()
@@ -36,9 +37,12 @@ heartRate = []
 fps = 30
 PPG = np.array([])
 first = 0
+global_start = time.time()
 
 while cap.isOpened():
     success,image = cap.read()
+    print (int(count/(time.time()-global_start)))
+    count+=1
     if(cv2.waitKey(1)==13 or success==False):
         break
     height, width = image.shape[:2];
@@ -48,6 +52,7 @@ while cap.isOpened():
     image_landmarks,landmarks = ip.landmark_image(image)
     imageOrg = image.copy()
     warp = image.copy();
+    sevenSec = 7*fps
     if landmarks != "error" and landmarks!=():
         p1,p2,p3,p4,mean_eye = ip.forehead(landmarks)
         points = [p1,p2,p3,p4,p1_old,p2_old,p3_old,p4_old]
@@ -86,13 +91,15 @@ while cap.isOpened():
             Bsig = np.append(Bsig,np.mean(B[np.nonzero(B)]))
             Gsig = np.append(Gsig,np.mean(G[np.nonzero(G)]))
             Rsig = np.append(Rsig,np.mean(R[np.nonzero(R)]))
-
+            fps = int(count/(time.time()-global_start))
+            print(fps)
+            sevenSec = 7*fps
 
             frame_count+=1
         
     cv2.imshow('Image', image)
-        
-    if (frame_count==300):
+
+    if (frame_count==(10*fps)):
         if first==0:
             Gsig = sp.detrend(Gsig,10)
             Rsig = sp.detrend(Rsig,10)
@@ -105,18 +112,18 @@ while cap.isOpened():
             first = 1
             
         else:
-            
-            g = sp.detrend(Gsig[210:],10)
-            b = sp.detrend(Bsig[210:],10)
-            r = sp.detrend(Rsig[210:],10)
+            window_counter+=1
+            g = sp.detrend(Gsig[sevenSec:],10)
+            b = sp.detrend(Bsig[sevenSec:],10)
+            r = sp.detrend(Rsig[sevenSec:],10)
             
             g = sp.normalize(g)
             b = sp.normalize(b)
             r = sp.normalize(r)
             
-            Gsig = Gsig[:210]
-            Rsig = Rsig[:210]
-            Bsig = Bsig[:210]
+            Gsig = Gsig[:sevenSec]
+            Rsig = Rsig[:sevenSec]
+            Bsig = Bsig[:sevenSec]
             
             Gsig = np.append(Gsig,g)
             Bsig = np.append(Bsig,b)
@@ -135,19 +142,21 @@ while cap.isOpened():
         else:
             bpm_old = bpm
         heartRate.append(bpm*0.8+bpm_old*0.2)
-        print(bpm)
+        
         times = []
-        Bsig =Bsig[90:]; Gsig = Gsig[90:]; Rsig = Rsig[90:];
-        frame_count = 210
+        threeSec = 3*fps
+        Bsig =Bsig[threeSec:]; Gsig = Gsig[threeSec:]; Rsig = Rsig[threeSec:];
+        frame_count = sevenSec
     count+=1
 
-PPG.flatten()
-with open('Running_PPG.pkl', 'wb') as f:
-    pickle.dump(PPG,f)
 
 
 cap.release()
 cv2.destroyAllWindows()
 
-
-
+PPG.flatten()
+with open('realTime.pkl', 'wb') as f:
+    pickle.dump(PPG,f)
+#    
+window = (window_counter*3) + 10 - (5/3) 
+print(window)
