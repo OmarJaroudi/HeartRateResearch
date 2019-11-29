@@ -2,7 +2,6 @@ import numpy as np
 from scipy.signal import firwin,resample
 import pandas as pd
 from sklearn.decomposition import PCA
-from jade import jadeR
 import math
 from matplotlib import pyplot as plt
 import scipy 
@@ -76,10 +75,11 @@ class Signal_processing():
         Gsig1 = np.convolve(Gsig1,bandpass_filter)
         Rsig1 = np.convolve(Rsig1,bandpass_filter)
         Bsig1 = np.convolve(Bsig1,bandpass_filter)
-        
-        Gsig1 = Gsig1[50:350]
-        Bsig1 = Bsig1[50:350]
-        Rsig1 = Rsig1[50:350]
+
+        if len(Gsig1>fps*10):
+            Gsig1 = Gsig1[:fps*10]
+            Rsig1 = Rsig1[:fps*10]
+            Bsig1 = Bsig1[:fps*10]
         #preparing the pandas Dataframe   
         dataset = pd.DataFrame({'Gsig':Gsig1,'Rsig':Rsig1,'Bsig':Bsig1})
         features = ['Gsig','Rsig','Bsig']
@@ -118,21 +118,19 @@ class Signal_processing():
         freq = freqs[idx]
         freq_in_hertz = abs(freq * fps)
         bpm2 = int(freq_in_hertz*60)
+        sevenSec = fps*7
         
-        
-        #choosing the source signal to be used for fourier analysis based on PSD peak
+        if old==0:
+            return bpm1,PC1        #choosing the source signal to be used for fourier analysis based on PSD peak
         if(ps1-ps2)>1000:
-            return (bpm1,PC1[210:])
+            return (bpm1,PC1[sevenSec:])
         elif (ps2-ps1)>1000:
-            return bpm2,PC2[210:]
+            return bpm2,PC2[sevenSec:]
         elif abs(ps1-ps2)<1000:
-            if old==0:
-                return bpm1,PC1
+            if abs(bpm1-old)<abs(bpm2-old):
+                return bpm1,PC1[sevenSec:]
             else:
-                if abs(bpm1-old)<abs(bpm2-old):
-                    return bpm1,PC1[210:]
-                else:
-                    return bpm2,PC2[210:]
+                return bpm2,PC2[sevenSec:]
         
     def detrend(self,signal, Lambda):
         # Copyright (c) 2017 Idiap Research Institute, http://www.idiap.ch/
@@ -186,7 +184,7 @@ class Signal_processing():
          
     
 
-    def HRV(self,data,Min,Max,window,IBI=False,SDNN = False,BPM = False):
+    def HRV(self,data,Min,Max,window,IBI=False,BPM = False,SDNN = False):
         hr = []
         """
         @input:     data = raw PPG signal to perform HRV analysis
@@ -204,11 +202,11 @@ class Signal_processing():
         """
 #        low = (Min-5)/60
 #        high = (Max-5)/60
-        f_old = len(data)/window
+        f_old = len(data)/(window)
 #        f = self.butter_bandpass_filter(data,low,high,f_old,2)
         
         f = self.interpolate(data,f_old,240,window)
-
+        
         peaks = []
         x = 0
         j = 0
