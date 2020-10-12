@@ -10,3 +10,4 @@
 <p> Note: if the peaks of the PSD are within 1000 units of each other, we select the signal based on the previous heart rate reading </p>
 
 <img src = "flow_diagram.png" alt = "research summary"/>
+<p> Please see "Detailed summary.pdf" for a detailed walkthrough of the algorithm. Also note that the code presented in this repo is not packaged or tailored to be run directly on a 3rd party machine. </p>
